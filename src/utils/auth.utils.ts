@@ -9,12 +9,15 @@ export const comparePassword = async (password: string, hash: string) => {
   return await bcrypt.compare(password, hash);
 };
 
+// Use JWT_ACCESS_SECRET here
 export const generateToken = (userId: string, role: string) => {
-  return jwt.sign({ userId, role }, process.env.JWT_SECRET!, { expiresIn: "1h" });
+  if (!process.env.JWT_ACCESS_SECRET) throw new Error("JWT_ACCESS_SECRET missing");
+  return jwt.sign({ userId, role }, process.env.JWT_ACCESS_SECRET, { expiresIn: "1h" });
 };
 
 export const generateRefreshToken = (userId: string, role: string) => {
-  return jwt.sign({ userId, role }, process.env.JWT_REFRESH_SECRET!, { expiresIn: "7d" });
+  if (!process.env.JWT_REFRESH_SECRET) throw new Error("JWT_REFRESH_SECRET missing");
+  return jwt.sign({ userId, role }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
 };
 
 export const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
