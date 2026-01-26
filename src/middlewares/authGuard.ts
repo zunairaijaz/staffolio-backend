@@ -1,8 +1,13 @@
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import jwt, { JwtPayload } from "jsonwebtoken";
+
+// ✅ Extend Request to include `user`
+export interface AuthRequest extends Request {
+  user?: string | JwtPayload;
+}
 
 export const authGuard = (
-  req: any,
+  req: AuthRequest,
   res: Response,
   next: NextFunction
 ) => {
@@ -15,11 +20,8 @@ export const authGuard = (
   const token = authHeader.split(" ")[1];
 
   try {
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_ACCESS_SECRET!
-    );
-    req.user = decoded;
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET!);
+    req.user = decoded; // now TypeScript knows `req.user` exists
     next();
   } catch (err) {
     return res.status(401).json({ message: "Invalid token" });

@@ -78,19 +78,39 @@ export const login = async (req: Request, res: Response) => {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
 
-    if (!user || !user.isVerified) return res.status(401).json({ success: false, message: "Account not verified" });
+    if (!user || !user.isVerified) {
+      return res.status(401).json({ success: false, message: "Account not verified" });
+    }
 
     const isValid = await comparePassword(password, user.password);
-    if (!isValid) return res.status(401).json({ success: false, message: "Invalid credentials" });
+    if (!isValid) {
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    }
 
     const token = generateToken(user._id.toString(), user.role);
-    const refreshToken = generateToken(user._id.toString(), user.role); // optional refresh token
+    const refreshToken = generateToken(user._id.toString(), user.role); // optional
 
-    res.json({ success: true, token, refreshToken });
+    // Prepare user data to send (exclude sensitive info)
+    const userData = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isVerified: user.isVerified
+    };
+
+    res.json({
+      success: true,
+      message: "Login successful",
+      token,
+      refreshToken,
+      user: userData, // ✅ include full user details here
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 export const logout = async (req: Request, res: Response) => {
   res.json({ success: true, message: "Logged out successfully" });
