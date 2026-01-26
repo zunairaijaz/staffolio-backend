@@ -3,7 +3,12 @@ import TimeSession from "../models/TimeSession";
 import { AuthRequest } from "../middlewares/authGuard";
 import mongoose from "mongoose";
 
-// Helper to get today's date in YYYY-MM-DD format
+// Standardize ID extraction to avoid 401 errors
+const getUserId = (req: AuthRequest) => {
+  const user = req.user as any;
+  return user?.id || user?._id || user?.sub;
+};
+
 const getTodayDate = () => {
   const today = new Date();
   const offset = today.getTimezoneOffset();
@@ -14,78 +19,72 @@ const getTodayDate = () => {
 // ================= CLOCK IN =================
 export const clockIn = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req.user as any).id;
-    const todayDate = getTodayDate();
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: "User ID missing in token" });
 
-    const activeSession = await TimeSession.findOne({
-      user: userId,
-      date: todayDate,
-      isActive: true,
-    });
+    const todayDate = getTodayDate();
+    const activeSession = await TimeSession.findOne({ user: userId, isActive: true });
 
     if (activeSession) {
-      return res.status(400).json({
-        success: false,
-        message: "You are already clocked in",
-      });
+      return res.status(400).json({ success: false, message: "Already clocked in" });
     }
 
     const session = await TimeSession.create({
       user: new mongoose.Types.ObjectId(userId),
-      date: todayDate,         
+      date: todayDate,
       clockIn: new Date(),
       isActive: true,
     });
 
-    res.json({
-      success: true,
-      message: "Clock-in successful",
-      session,
-    });
+    res.json({ success: true, message: "Clock-in successful", session });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// ================= CLOCK OUT =================
+// ================= CLOCK OUT (Hubstaff/Workfolio Style) =================
 export const clockOut = async (req: AuthRequest, res: Response) => {
   try {
-    const user = req.user as any;
+    const userId = getUserId(req);
     
-    // Attempt to grab the ID from all common JWT fields
-    const userId = user?.id || user?._id || user?.sub;
-
+    // This was likely your 401 trigger - improved safety check
     if (!userId) {
       return res.status(401).json({ 
         success: false, 
-        message: "User ID not found in token",
-        payloadReceived: user // This helps you see what's wrong in the response
+        message: "Unauthorized: Token valid but User ID not found in payload" 
       });
     }
 
-    // Use the ID to find the session
+    // Hubstaff Logic: The frontend tracks active time (subtracting idle time) 
+    // and sends the total seconds worked in the request body.
+    const { clientDurationSeconds } = req.body; 
+
     const session = await TimeSession.findOne({
       user: new mongoose.Types.ObjectId(userId),
       isActive: true,
-    });
+    }).sort({ createdAt: -1 });
 
     if (!session) {
-      return res.status(404).json({
-        success: false,
-        message: "No active clock-in session found for this user",
-      });
+      return res.status(404).json({ success: false, message: "No active session found" });
     }
 
     const clockOutTime = new Date();
     session.clockOut = clockOutTime;
     session.isActive = false;
-    session.totalDuration = Math.floor(
+
+    // Use client-provided duration if available, otherwise calculate from timestamps
+    session.totalDuration = clientDurationSeconds ?? Math.floor(
       (clockOutTime.getTime() - session.clockIn.getTime()) / 1000
     );
 
     await session.save();
 
-    res.json({ success: true, message: "Clock-out successful", session });
+    res.json({ 
+      success: true, 
+      message: "Clock-out successful", 
+      durationMinutes: Math.floor((session.totalDuration ?? 0) / 60),
+      session 
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
