@@ -3,10 +3,11 @@ import TimeSession from "../models/TimeSession";
 import { AuthRequest } from "../middlewares/authGuard";
 import mongoose from "mongoose";
 
-// Standardize ID extraction to avoid 401 errors
+// ✅ FIXED: Standardize ID extraction to match your generateToken utility
 const getUserId = (req: AuthRequest) => {
   const user = req.user as any;
-  return user?.id || user?._id || user?.sub;
+  // Your generateToken uses { userId }, so we must check that first!
+  return user?.userId || user?.id || user?._id; 
 };
 
 const getTodayDate = () => {
@@ -46,23 +47,14 @@ export const clockIn = async (req: AuthRequest, res: Response) => {
 export const clockOut = async (req: AuthRequest, res: Response) => {
   try {
     const userId = getUserId(req);
-    
-    // This was likely your 401 trigger - improved safety check
-    if (!userId) {
-      return res.status(401).json({ 
-        success: false, 
-        message: "Unauthorized: Token valid but User ID not found in payload" 
-      });
-    }
+    if (!userId) return res.status(401).json({ success: false, message: "User ID missing in token" });
 
-    // Hubstaff Logic: The frontend tracks active time (subtracting idle time) 
-    // and sends the total seconds worked in the request body.
-    const { clientDurationSeconds } = req.body; 
+    const { totalWorkedSeconds } = req.body; 
 
     const session = await TimeSession.findOne({
       user: new mongoose.Types.ObjectId(userId),
       isActive: true,
-    }).sort({ createdAt: -1 });
+    });
 
     if (!session) {
       return res.status(404).json({ success: false, message: "No active session found" });
@@ -72,17 +64,18 @@ export const clockOut = async (req: AuthRequest, res: Response) => {
     session.clockOut = clockOutTime;
     session.isActive = false;
 
-    // Use client-provided duration if available, otherwise calculate from timestamps
-    session.totalDuration = clientDurationSeconds ?? Math.floor(
+    // Assignment happens here
+    session.totalDuration = totalWorkedSeconds ?? Math.floor(
       (clockOutTime.getTime() - session.clockIn.getTime()) / 1000
     );
 
     await session.save();
 
+    // TS Fix applied here using (session.totalDuration || 0)
     res.json({ 
       success: true, 
       message: "Clock-out successful", 
-      durationMinutes: Math.floor((session.totalDuration ?? 0) / 60),
+      workedMinutes: Math.floor((session.totalDuration || 0) / 60),
       session 
     });
   } catch (error: any) {
