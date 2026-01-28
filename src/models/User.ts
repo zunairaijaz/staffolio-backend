@@ -6,6 +6,10 @@ export interface IUser extends Document {
   phone?: string;
   password: string;
 
+  countryCode?: string;
+  teamName?: string;
+  dateOfBirth?: Date;
+
   otp?: string;
   otpExpiry?: Date;
   isVerified: boolean;
@@ -38,18 +42,27 @@ const userSchema = new Schema<IUser>(
       sparse: true,
     },
 
+    countryCode: {
+      type: String,
+      trim: true,
+    },
+
+    teamName: {
+      type: String,
+      trim: true,
+    },
+
+    dateOfBirth: {
+      type: Date,
+    },
+
     password: {
       type: String,
       required: true,
     },
 
-    otp: {
-      type: String,
-    },
-
-    otpExpiry: {
-      type: Date,
-    },
+    otp: String,
+    otpExpiry: Date,
 
     isVerified: {
       type: Boolean,
@@ -68,9 +81,7 @@ const userSchema = new Schema<IUser>(
       default: "ACTIVE",
     },
 
-    lastLogin: {
-      type: Date,
-    },
+    lastLogin: Date,
   },
   { timestamps: true }
 );
