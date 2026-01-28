@@ -96,6 +96,13 @@ export const login = async (req: Request, res: Response) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      teamName: user.teamName,
+      status: user.status,
+      dateOfBirth: user.dateOfBirth,
+      countryCode: user.countryCode,
+      phone: user.phone,
+      LastLogin: user.lastLogin,
+
       isVerified: user.isVerified
     };
 
