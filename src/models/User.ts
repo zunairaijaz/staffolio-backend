@@ -68,13 +68,12 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
-
-    role: {
-      type: String,
-      enum: ["ADMIN", "EMPLOYEE"],
-      default: "EMPLOYEE",
-    },
-
+ role: {
+  type: String,
+  enum: ['ADMIN', 'TEAM_LEAD', 'MANAGER', 'EMPLOYEE'],
+  default: 'EMPLOYEE',
+  required: true,
+},
     status: {
       type: String,
       enum: ["ACTIVE", "INACTIVE"],
