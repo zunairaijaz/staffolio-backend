@@ -4,7 +4,9 @@ import { uploadScreenshot } from '../controllers/screenshot.controller';
 
 const router = Router();
 
-const upload = multer({ dest: 'uploads/' });
+// ✅ use memory storage to avoid writing to disk
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
 router.post(
   '/upload',
