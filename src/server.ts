@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth.routes";
 import cors from "cors"; // <-- import cors
 import timeSessionRoutes from "./routes/timeSession.routes";
 import userRoutes from "./routes/user.routes";
+import screenshotRoutes from './routes/screenshots.routes'
 dotenv.config();
 connectDB();
 
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/time-session", timeSessionRoutes);
 app.use("/api/user", userRoutes);
+app.use('/api/screenshots', screenshotRoutes);
 
 
 const PORT = process.env.PORT || 5000;
