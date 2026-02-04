@@ -99,3 +99,95 @@ export const getTodaySession = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+// ================= TODAY + YESTERDAY TOTAL STATS =================
+export const getStats = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "User ID missing" });
+    }
+
+    // ✅ Convert seconds → HH:MM:SS
+    const formatDuration = (totalSeconds: number) => {
+      const hrs = Math.floor(totalSeconds / 3600);
+      const mins = Math.floor((totalSeconds % 3600) / 60);
+      const secs = totalSeconds % 60;
+
+      return `${hrs.toString().padStart(2, "0")}:${mins
+        .toString()
+        .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    };
+
+    // ---------- TODAY ----------
+    const todayDate = getTodayDate();
+
+    // ---------- YESTERDAY ----------
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const offset = yesterday.getTimezoneOffset();
+    const localYesterday = new Date(yesterday.getTime() - offset * 60 * 1000);
+    const yesterdayDate = localYesterday.toISOString().split("T")[0];
+
+    // ---------- LAST MONTH ----------
+    const startOfLastMonth = new Date();
+    startOfLastMonth.setMonth(startOfLastMonth.getMonth() - 1);
+    startOfLastMonth.setDate(1);
+    startOfLastMonth.setHours(0, 0, 0, 0);
+
+    const endOfLastMonth = new Date();
+    endOfLastMonth.setDate(0); // last day of previous month
+    endOfLastMonth.setHours(23, 59, 59, 999);
+
+    // ---------- FETCH DATA ----------
+    const sessions = await TimeSession.find({
+      user: userId,
+      isActive: false,
+    });
+    // ---------- CALCULATIONS ----------
+    let todaySeconds = 0;
+    let yesterdaySeconds = 0;
+    let lastMonthSeconds = 0;
+
+    sessions.forEach((s) => {
+      const duration = s.totalDuration || 0;
+
+      // Today
+      if (s.date === todayDate) {
+        todaySeconds += duration;
+      }
+
+      // Yesterday
+      if (s.date === yesterdayDate) {
+        yesterdaySeconds += duration;
+      }
+
+      // Last Month
+      if (s.clockIn) {
+        const clockInTime = new Date(s.clockIn);
+
+        if (clockInTime >= startOfLastMonth && clockInTime <= endOfLastMonth) {
+          lastMonthSeconds += duration;
+        }
+      }
+    });
+
+    // ✅ RETURN FORMATTED RESPONSE
+    return res.json({
+      success: true,
+
+      // Raw seconds (optional)
+      todaySeconds,
+      yesterdaySeconds,
+      lastMonthSeconds,
+
+      // ✅ Formatted values
+      today: formatDuration(todaySeconds),
+      yesterday: formatDuration(yesterdaySeconds),
+      lastMonth: formatDuration(lastMonthSeconds),
+    });
+  } catch (error: any) {
+    console.error("❌ Stats Error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
