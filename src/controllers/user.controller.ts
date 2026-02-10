@@ -95,3 +95,35 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     });
   }
 };
+ 
+export const getUserKPI = async (req: AuthRequest, res: Response) => {
+  try {
+    // Count total employees
+    const totalWorkforce = await User.countDocuments();
+
+    // Count currently active employees
+    const currentlyActive = await User.countDocuments({ status: "active" });
+
+    // Count employees on leave
+    const onLeave = await User.countDocuments({ status: "on_leave" });
+
+    // Count team leads (adjust according to your DB: role or isTeamLead field)
+    const teamLeads = await User.countDocuments({ role: "TEAMLEAD" }); 
+    // or if you have a boolean field: { isTeamLead: true }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalWorkforce,
+        currentlyActive,
+        onLeave,
+        teamLeads,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Something went wrong",
+    });
+  }
+};
