@@ -47,3 +47,75 @@ export const uploadScreenshot = async (req: Request, res: Response) => {
     return res.status(500).json({ message: 'Upload failed', error });
   }
 };
+export const getAllScreenshots = async (req: Request, res: Response) => {
+  try {
+    const { filter, date, startDate, endDate } = req.query;
+
+    let start: Date;
+    let end: Date;
+
+    start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    end = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    if (filter === "yesterday") {
+      start = new Date();
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+
+      end = new Date();
+      end.setDate(end.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    if (date) {
+      start = new Date(date as string);
+      start.setHours(0, 0, 0, 0);
+
+      end = new Date(date as string);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    if (startDate && endDate) {
+      start = new Date(startDate as string);
+      start.setHours(0, 0, 0, 0);
+
+      end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    const screenshots = await Screenshot.find({
+      takenAt: { $gte: start, $lte: end },
+    })
+      .populate("userId", "name email teamName")
+      .sort({ takenAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: screenshots.length,
+
+      appliedFilter: {
+        filter: filter || "today",
+        startDate: start,
+        endDate: end,
+      },
+
+      screenshots: screenshots.map((shot: any) => ({
+        _id: shot._id,
+        imageUrl: shot.imageUrl,
+        takenAt: shot.takenAt,
+
+        userName: shot.userId?.name,
+        userEmail: shot.userId?.email,
+        teamName: shot.userId?.teamName,
+      })),
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch screenshots",
+    });
+  }
+};

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { uploadScreenshot } from '../controllers/screenshot.controller';
+import { uploadScreenshot, getAllScreenshots } from '../controllers/screenshot.controller';
+import { authGuard } from '../utils/jwt';
 
 const router = Router();
 
@@ -13,5 +14,6 @@ router.post(
   upload.single('screenshot'), 
   uploadScreenshot
 );
+router.get('/', authGuard, getAllScreenshots)
 
 export default router;
