@@ -191,3 +191,65 @@ export const getStats = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const getTimeSessions = async (req: AuthRequest, res: Response) => {
+  try {
+    // Optional: only admin or manager can access all sessions
+    const requesterId = getUserId(req);
+    if (!requesterId) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    // Optional: filter by user, department, status, or date range
+    const { userId, department, status, startDate, endDate } = req.query;
+
+    // Build query dynamically
+    const query: any = {};
+    if (userId) query.user = userId;
+    if (status) query.isActive = status === "active" ? true : false;
+    if (startDate || endDate) query.clockIn = {};
+    if (startDate) query.clockIn.$gte = new Date(startDate as string);
+    if (endDate) query.clockIn.$lte = new Date(endDate as string);
+
+    // Fetch sessions with user info
+    const sessions = await TimeSession.find(query)
+      .populate({
+        path: "user",
+        select: "name email department status", // Add any other fields
+      })
+      .sort({ clockIn: -1 });
+
+    // Map to include in/out duration and clean format
+    const formattedSessions = sessions.map((s) => {
+      const user = (s.user as any) || {};
+      const clockIn = s.clockIn ? new Date(s.clockIn) : null;
+      const clockOut = s.clockOut ? new Date(s.clockOut) : null;
+      const durationSeconds =
+        s.totalDuration ??
+        (clockIn && clockOut ? Math.floor((clockOut.getTime() - clockIn.getTime()) / 1000) : 0);
+
+      return {
+        id: s._id,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          department: user.department || "N/A",
+          status: user.status || "Unknown",
+        },
+        clockIn: clockIn?.toISOString() || null,
+        clockOut: clockOut?.toISOString() || null,
+        duration: durationSeconds, // seconds
+        durationFormatted: `${Math.floor(durationSeconds / 3600)
+          .toString()
+          .padStart(2, "0")}:${Math.floor((durationSeconds % 3600) / 60)
+          .toString()
+          .padStart(2, "0")}:${(durationSeconds % 60).toString().padStart(2, "0")}`,
+        isActive: s.isActive,
+      };
+    });
+
+    res.json({ success: true, sessions: formattedSessions });
+  } catch (error: any) {
+    console.error("❌ getTimeSessions Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
