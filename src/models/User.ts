@@ -76,7 +76,7 @@ const userSchema = new Schema<IUser>(
 },
     status: {
       type: String,
-      enum: ["ACTIVE", "INACTIVE"],
+      enum: ["ACTIVE", "INACTIVE", "ON_LEAVE"],
       default: "ACTIVE",
     },
 
