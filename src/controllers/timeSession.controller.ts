@@ -232,7 +232,7 @@ export const getTimeSessions = async (req: AuthRequest, res: Response) => {
           id: user._id,
           name: user.name,
           email: user.email,
-          department: user.department || "N/A",
+          department: user.teamName || "N/A",
           status: user.status || "Unknown",
         },
         clockIn: clockIn?.toISOString() || null,
