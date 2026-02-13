@@ -2,11 +2,12 @@ import express from "express";
 import dotenv from "dotenv";
 import connectDB from "./config/db";
 import authRoutes from "./routes/auth.routes";
-import cors from "cors"; // <-- import cors
+import cors from "cors"; 
 import timeSessionRoutes from "./routes/timeSession.routes";
 import userRoutes from "./routes/user.routes";
 import screenshotRoutes from './routes/screenshots.routes';
 import activityRoutes from "./routes/activity.routes";
+import teamRoutes from "./routes/team.routes";
 dotenv.config();
 connectDB();
 
@@ -25,6 +26,7 @@ app.use("/api/time-session", timeSessionRoutes);
 app.use("/api/user", userRoutes);
 app.use('/api/screenshots', screenshotRoutes);
 app.use("/api/activity", activityRoutes);
+app.use("/api/teams", teamRoutes);
 
 
 const PORT = process.env.PORT || 5000;
