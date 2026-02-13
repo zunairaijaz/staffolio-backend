@@ -9,6 +9,12 @@ const teamSchema = new mongoose.Schema(
       trim: true,
     },
 
+    teamLead: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true, // team must have a lead
+    },
+
     members: [
       {
         type: mongoose.Schema.Types.ObjectId,
