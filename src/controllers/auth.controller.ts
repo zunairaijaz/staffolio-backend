@@ -11,14 +11,17 @@ const transporter = nodemailer.createTransport({
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, role } = req.body;
 
     // 1️⃣ Validate required fields
     if (!name || !email || !password) {
-      return res.status(400).json({ success: false, message: "Name, email, and password are required" });
+      return res.status(400).json({
+        success: false,
+        message: "Name, email, and password are required",
+      });
     }
 
-    // 2️⃣ Check if email already exists (this is where your error comes from)
+    // 2️⃣ Check if email already exists
     if (await User.findOne({ email })) {
       return res.status(400).json({ success: false, message: "Email already exists" });
     }
@@ -27,16 +30,20 @@ export const register = async (req: Request, res: Response) => {
     const hashed = await hashPassword(password);
     const otp = generateOTP();
 
-    // 4️⃣ Create user
+    // 4️⃣ Determine role: use provided role, otherwise default to 'employee'
+    const userRole = role ? role : "EMPLOYEE";
+
+    // 5️⃣ Create user
     const user = await User.create({
       name,
       email,
       password: hashed,
+      role: userRole,
       otp,
-      otpExpiry: new Date(Date.now() + 10 * 60000),
+      otpExpiry: new Date(Date.now() + 10 * 60000), // 10 min expiry
     });
 
-    // 5️⃣ Send OTP email
+    // 6️⃣ Send OTP email
     await transporter.sendMail({
       from: process.env.EMAIL,
       to: email,
@@ -44,12 +51,13 @@ export const register = async (req: Request, res: Response) => {
       text: `Your OTP is ${otp}`,
     });
 
-    // 6️⃣ Respond success
+    // 7️⃣ Respond success
     res.json({ success: true, message: "OTP sent to email" });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 
 
