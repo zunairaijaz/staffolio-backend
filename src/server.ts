@@ -8,6 +8,7 @@ import userRoutes from "./routes/user.routes";
 import screenshotRoutes from './routes/screenshots.routes';
 import activityRoutes from "./routes/activity.routes";
 import teamRoutes from "./routes/team.routes";
+import companyRoutes from "./routes/company.routes";
 dotenv.config();
 connectDB();
 
@@ -27,7 +28,7 @@ app.use("/api/user", userRoutes);
 app.use('/api/screenshots', screenshotRoutes);
 app.use("/api/activity", activityRoutes);
 app.use("/api/teams", teamRoutes);
-
+app.use("/api/company", companyRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

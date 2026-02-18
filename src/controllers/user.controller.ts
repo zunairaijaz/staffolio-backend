@@ -135,78 +135,95 @@ export const getUserKPI = async (req: AuthRequest, res: Response) => {
 export const onboardEmployee = async (req: AuthRequest, res: Response) => {
   try {
     const admin = req.user as any;
+    
+    // Debug: Check if your token actually has the ID
+    console.log("Logged in Admin User Object:", admin);
 
-    const { name, email, role, teamName } = req.body;
+    const companyId = admin.companyId || admin.userId; 
 
-    // ✅ Validation
-    if (!name || !email) {
-      return res.status(400).json({
+    if (!companyId) {
+      return res.status(403).json({
         success: false,
-        message: "Name and Email are required",
+        message: "Unauthorized: Token is missing company association",
       });
     }
 
-    // ✅ Check if already exists
-    const existingUser = await User.findOne({
-      email: email.toLowerCase(),
-    });
+    const { name, email, role, teamName } = req.body;
 
+    if (!name || !email) {
+      return res.status(400).json({ success: false, message: "Name and Email are required" });
+    }
+
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "User already exists with this email",
-      });
+      return res.status(400).json({ success: false, message: "User already exists" });
     }
 
     const plainPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
+    // Create user
     const employee = await User.create({
       name,
       email: email.toLowerCase(),
       password: hashedPassword,
-
+      company: companyId, // Now recognized by the schema
       role: role || "EMPLOYEE",
       teamName: teamName || admin.teamName,
-
       status: "ACTIVE",
       isVerified: true,
     });
 
-    await sendMail(
-      employee.email,
-      "Welcome to Staffolio 🎉",
-      `
-        <h2>Hello ${employee.name},</h2>
-
-        <p>You have been successfully onboarded into Staffolio Workforce System.</p>
-
-        <h3>Your Login Credentials:</h3>
-        <p><b>Email:</b> ${employee.email}</p>
-        <p><b>Password:</b> ${plainPassword}</p>
-
-        <p>Please login and change your password immediately.</p>
-
-        <br/>
-        <p>Regards,<br/>Staffolio HR Team</p>
-      `
-    );
+    await sendMail(employee.email, "Welcome", `Email: ${employee.email} Pass: ${plainPassword}`);
 
     return res.status(201).json({
       success: true,
-      message: "Employee onboarded successfully & credentials sent via email",
+      message: "Employee onboarded successfully",
       employee: {
         id: employee._id,
         name: employee.name,
         email: employee.email,
+        company: employee.company, // Will now show the ID
         role: employee.role,
-        status: employee.status,
-        teamName: employee.teamName,
       },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getMyCompanyEmployees = async (req: AuthRequest, res: Response) => {
+  try {
+    const loggedInUser = req.user as any;
+
+    // 1. Identify the company ID from the token
+    const companyId = loggedInUser.companyId || loggedInUser.userId;
+
+    if (!companyId) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. No company associated with this account.",
+      });
+    }
+
+    // 2. Fetch only users who belong to THIS company
+    // We also exclude the admin/company itself from the list if desired
+    const employees = await User.find({ 
+      company: companyId,
+      _id: { $ne: loggedInUser.userId } // Optional: excludes the person asking from the list
+    })
+    .select("-password -otp -otpExpiry") 
+    .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: employees.length,
+      employees,
     });
   } catch (error: any) {
     return res.status(500).json({
       success: false,
-      message: error.message || "Onboarding failed",
+      message: error.message || "Failed to retrieve company employees",
     });
   }
 };
