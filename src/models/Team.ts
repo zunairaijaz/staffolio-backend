@@ -8,11 +8,15 @@ const teamSchema = new mongoose.Schema(
       unique: true,
       trim: true,
     },
-
+     company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      required: true,
+    },
     teamLead: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true, // team must have a lead
+      required: true, 
     },
 
     members: [

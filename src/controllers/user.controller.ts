@@ -196,24 +196,23 @@ export const getMyCompanyEmployees = async (req: AuthRequest, res: Response) => 
   try {
     const loggedInUser = req.user as any;
 
-    // 1. Identify the company ID from the token
-    const companyId = loggedInUser.companyId || loggedInUser.userId;
+    // ✅ Company ID comes directly from token
+    const companyId = loggedInUser.userId;
 
-    if (!companyId) {
+    // ✅ Only companies can access
+    if (loggedInUser.role !== "COMPANY") {
       return res.status(403).json({
         success: false,
-        message: "Access denied. No company associated with this account.",
+        message: "Only companies can access employees",
       });
     }
 
-    // 2. Fetch only users who belong to THIS company
-    // We also exclude the admin/company itself from the list if desired
-    const employees = await User.find({ 
+    // ✅ Fetch employees of this company
+    const employees = await User.find({
       company: companyId,
-      _id: { $ne: loggedInUser.userId } // Optional: excludes the person asking from the list
     })
-    .select("-password -otp -otpExpiry") 
-    .sort({ createdAt: -1 });
+      .select("-password -otp -otpExpiry")
+      .sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,

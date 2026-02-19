@@ -6,54 +6,81 @@ import { AuthRequest } from "../middlewares/authGuard";
 
 export const createTeam = async (req: AuthRequest, res: Response) => {
   try {
-    const admin = req.user as any;
+    const company = req.user as any;
+    const companyId = company.userId;
+
     const { teamName, teamLead, members } = req.body;
 
-    // ✅ Validation
-    if (!teamName) {
+    if (!teamName)
       return res.status(400).json({ success: false, message: "Team name is required" });
-    }
 
-    if (!teamLead) {
+    if (!teamLead)
       return res.status(400).json({ success: false, message: "Team lead is required" });
-    }
 
-    // ✅ Check if team already exists
-    const existingTeam = await Team.findOne({ teamName });
-    if (existingTeam) {
-      return res.status(400).json({ success: false, message: "Team already exists" });
-    }
-
-    // ✅ Validate teamLead
-    const leadUser = await User.findById(teamLead);
-    if (!leadUser) {
-      return res.status(400).json({ success: false, message: "Invalid team lead ID" });
-    }
-
-    // ✅ Validate Members
-    let memberIds: mongoose.Types.ObjectId[] = [];
-    if (members && members.length > 0) {
-      const users = await User.find({ _id: { $in: members } });
-      if (users.length !== members.length) {
-        return res.status(400).json({ success: false, message: "One or more members are invalid user IDs" });
-      }
-      memberIds = members.map((id: string) => new mongoose.Types.ObjectId(id));
-    }
-
-    // ✅ Create Team
-    const team = await Team.create({
+    // ✅ Check duplicate team inside same company only
+    const existingTeam = await Team.findOne({
       teamName,
-      teamLead,
-      members: memberIds,
-      createdBy: admin.userId,
+      company: companyId,
     });
 
-    return res.status(201).json({ success: true, message: "Team created successfully", team });
+    if (existingTeam)
+      return res.status(400).json({
+        success: false,
+        message: "Team already exists in this company",
+      });
+
+    // ✅ Validate teamLead belongs to same company
+    const leadUser = await User.findOne({
+      _id: teamLead,
+      company: companyId,
+    });
+
+    if (!leadUser)
+      return res.status(400).json({
+        success: false,
+        message: "Team lead must belong to your company",
+      });
+
+    // ✅ Validate members belong to same company
+    let memberIds: mongoose.Types.ObjectId[] = [];
+
+    if (members && members.length > 0) {
+      const users = await User.find({
+        _id: { $in: members },
+        company: companyId,
+      });
+
+      if (users.length !== members.length)
+        return res.status(400).json({
+          success: false,
+          message: "All members must belong to your company",
+        });
+
+      memberIds = members.map(
+        (id: string) => new mongoose.Types.ObjectId(id)
+      );
+    }
+
+const team = await Team.create({
+  teamName,
+  teamLead,
+  members,
+  company: companyId,  
+  createdBy: companyId,
+});
+
+    return res.status(201).json({
+      success: true,
+      message: "Team created successfully",
+      team,
+    });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
-
 
 export const getAllTeams = async (req: AuthRequest, res: Response) => {
   try {
@@ -76,46 +103,108 @@ export const getAllTeams = async (req: AuthRequest, res: Response) => {
 
 export const updateTeam = async (req: AuthRequest, res: Response) => {
   try {
+    const company = req.user as any;
+    const companyId = company.userId;
+
     const { teamId } = req.params;
     const { teamName, teamLead, members } = req.body;
 
-    const team = await Team.findById(teamId);
-    if (!team) return res.status(404).json({ success: false, message: "Team not found" });
+    // ✅ Find team only inside this company
+    const team = await Team.findOne({
+      _id: teamId,
+      company: companyId,
+    });
 
-    if (teamName) team.teamName = teamName;
+    if (!team) {
+      return res.status(404).json({
+        success: false,
+        message: "Team not found in your company",
+      });
+    }
 
+    // ✅ Update team name (check duplicate inside same company)
+    if (teamName) {
+      const existing = await Team.findOne({
+        teamName,
+        company: companyId,
+        _id: { $ne: teamId },
+      });
+
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: "Another team already exists with this name",
+        });
+      }
+
+      team.teamName = teamName;
+    }
+
+    // ✅ Update team lead (must belong to same company)
     if (teamLead) {
-      const leadUser = await User.findById(teamLead);
-      if (!leadUser) return res.status(400).json({ success: false, message: "Invalid team lead ID" });
+      const leadUser = await User.findOne({
+        _id: teamLead,
+        company: companyId,
+      });
+
+      if (!leadUser) {
+        return res.status(400).json({
+          success: false,
+          message: "Team lead must belong to your company",
+        });
+      }
+
       team.teamLead = teamLead;
     }
 
+    // ✅ Update members (must belong to same company)
     if (members && Array.isArray(members)) {
-      const users = await User.find({ _id: { $in: members } });
-      if (users.length !== members.length)
-        return res.status(400).json({ success: false, message: "Invalid member IDs provided" });
+      const users = await User.find({
+        _id: { $in: members },
+        company: companyId,
+      });
+
+      if (users.length !== members.length) {
+        return res.status(400).json({
+          success: false,
+          message: "All members must belong to your company",
+        });
+      }
+
       team.members = members;
     }
 
     await team.save();
 
-    return res.status(200).json({ success: true, message: "Team updated successfully", team });
+    return res.status(200).json({
+      success: true,
+      message: "Team updated successfully",
+      team,
+    });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
-
-
 export const deleteTeam = async (req: AuthRequest, res: Response) => {
   try {
+    const company = req.user as any;
+    const companyId = company.userId;
+
     const { teamId } = req.params;
 
-    const team = await Team.findById(teamId);
+    // ✅ Only delete if team belongs to this company
+    const team = await Team.findOne({
+      _id: teamId,
+      company: companyId,
+    });
 
     if (!team) {
       return res.status(404).json({
         success: false,
-        message: "Team not found",
+        message: "Team not found in your company",
       });
     }
 
@@ -132,4 +221,36 @@ export const deleteTeam = async (req: AuthRequest, res: Response) => {
     });
   }
 };
+export const getMyCompanyTeams = async (req: AuthRequest, res: Response) => {
+  try {
+    // ✅ Logged-in company info comes from token
+    const loggedUser = req.user as any;
 
+    // companyId is stored inside JWT as userId
+    const companyId = loggedUser.userId;
+
+    if (!companyId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: Company not found in token",
+      });
+    }
+
+    // ✅ Fetch only teams of this company
+    const teams = await Team.find({ company: companyId })
+      .populate("teamLead", "name email status")
+      .populate("members", "name email status")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: teams.length,
+      teams,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
