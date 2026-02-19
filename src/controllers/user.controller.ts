@@ -102,18 +102,39 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
  
 export const getUserKPI = async (req: AuthRequest, res: Response) => {
   try {
-    // Count total employees
-    const totalWorkforce = await User.countDocuments();
+    // ✅ Logged company info from token
+    const loggedUser = req.user as any;
+    const companyId = loggedUser.userId;
 
-    // Count currently active employees
-    const currentlyActive = await User.countDocuments({ status: "ACTIVE" });
+    if (!companyId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: Company not found in token",
+      });
+    }
 
-    // Count employees on leave
-    const onLeave = await User.countDocuments({ status: "ON_LEAVE" });
+    // ✅ Count total employees of this company only
+    const totalWorkforce = await User.countDocuments({
+      company: companyId,
+    });
 
-    // Count team leads (adjust according to your DB: role or isTeamLead field)
-    const teamLeads = await User.countDocuments({ role: "TEAM_LEAD" }); 
-    // or if you have a boolean field: { isTeamLead: true }
+    // ✅ Count active employees of this company
+    const currentlyActive = await User.countDocuments({
+      company: companyId,
+      status: "ACTIVE",
+    });
+
+    // ✅ Count employees on leave of this company
+    const onLeave = await User.countDocuments({
+      company: companyId,
+      status: "ON_LEAVE",
+    });
+
+    // ✅ Count team leads inside this company
+    const teamLeads = await User.countDocuments({
+      company: companyId,
+      role: "TEAM_LEAD",
+    });
 
     return res.status(200).json({
       success: true,
@@ -127,7 +148,7 @@ export const getUserKPI = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({
       success: false,
-      message: error.message || "Something went wrong",
+      message: error.message || "Failed to fetch KPI",
     });
   }
 };

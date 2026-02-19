@@ -9,6 +9,10 @@ const getUserId = (req: AuthRequest) => {
   // Your generateToken uses { userId }, so we must check that first!
   return user?.userId || user?.id || user?._id; 
 };
+const getCompanyId = (req: AuthRequest) => {
+  const user = req.user as any;
+  return user?.companyId || user?.userId;
+};
 
 const getTodayDate = () => {
   const today = new Date();
@@ -86,7 +90,10 @@ export const clockOut = async (req: AuthRequest, res: Response) => {
 // ================= GET TODAY SESSION =================
 export const getTodaySession = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req.user as any).id;
+    const userId = getUserId(req);
+    if (!userId)
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+
     const todayDate = getTodayDate();
 
     const session = await TimeSession.findOne({
@@ -99,6 +106,7 @@ export const getTodaySession = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 // ================= TODAY + YESTERDAY TOTAL STATS =================
 export const getStats = async (req: AuthRequest, res: Response) => {
   try {
@@ -194,62 +202,87 @@ export const getStats = async (req: AuthRequest, res: Response) => {
 
 export const getTimeSessions = async (req: AuthRequest, res: Response) => {
   try {
-    // Optional: only admin or manager can access all sessions
     const requesterId = getUserId(req);
-    if (!requesterId) return res.status(401).json({ success: false, message: "Unauthorized" });
+    const companyId = getCompanyId(req);
 
-    // Optional: filter by user, department, status, or date range
-    const { userId, department, status, startDate, endDate } = req.query;
+    if (!requesterId || !companyId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: Missing token info",
+      });
+    }
 
-    // Build query dynamically
-    const query: any = {};
+    // Optional filters
+    const { userId, status, startDate, endDate } = req.query;
+
+    // ✅ Company Restriction Query
+    const query: any = {
+      company: companyId,
+    };
+
+    // Filter by specific employee
     if (userId) query.user = userId;
-    if (status) query.isActive = status === "active" ? true : false;
+
+    // Active/inactive filter
+    if (status)
+      query.isActive = status === "active" ? true : false;
+
+    // Date range filter
     if (startDate || endDate) query.clockIn = {};
     if (startDate) query.clockIn.$gte = new Date(startDate as string);
     if (endDate) query.clockIn.$lte = new Date(endDate as string);
 
-    // Fetch sessions with user info
+    // ✅ Fetch sessions
     const sessions = await TimeSession.find(query)
       .populate({
         path: "user",
-        select: "name email department status", // Add any other fields
+        select: "name email teamName status",
       })
       .sort({ clockIn: -1 });
 
-    // Map to include in/out duration and clean format
+    // Format Response
     const formattedSessions = sessions.map((s) => {
-      const user = (s.user as any) || {};
+      const user = s.user as any;
+
       const clockIn = s.clockIn ? new Date(s.clockIn) : null;
       const clockOut = s.clockOut ? new Date(s.clockOut) : null;
+
       const durationSeconds =
         s.totalDuration ??
-        (clockIn && clockOut ? Math.floor((clockOut.getTime() - clockIn.getTime()) / 1000) : 0);
+        (clockIn && clockOut
+          ? Math.floor((clockOut.getTime() - clockIn.getTime()) / 1000)
+          : 0);
 
       return {
         id: s._id,
         user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          department: user.teamName || "N/A",
-          status: user.status || "Unknown",
+          id: user?._id,
+          name: user?.name,
+          email: user?.email,
+          department: user?.teamName || "N/A",
+          status: user?.status || "Unknown",
         },
-        clockIn: clockIn?.toISOString() || null,
-        clockOut: clockOut?.toISOString() || null,
-        duration: durationSeconds, // seconds
-        durationFormatted: `${Math.floor(durationSeconds / 3600)
-          .toString()
-          .padStart(2, "0")}:${Math.floor((durationSeconds % 3600) / 60)
-          .toString()
-          .padStart(2, "0")}:${(durationSeconds % 60).toString().padStart(2, "0")}`,
+        clockIn: clockIn?.toISOString(),
+        clockOut: clockOut?.toISOString(),
+        duration: durationSeconds,
+        durationFormatted: new Date(durationSeconds * 1000)
+          .toISOString()
+          .substr(11, 8),
         isActive: s.isActive,
       };
     });
 
-    res.json({ success: true, sessions: formattedSessions });
+    return res.json({
+      success: true,
+      count: formattedSessions.length,
+      sessions: formattedSessions,
+    });
   } catch (error: any) {
     console.error("❌ getTimeSessions Error:", error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
+
