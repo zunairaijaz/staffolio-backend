@@ -3,6 +3,8 @@ import User from "../models/User";
 import { AuthRequest } from "../middlewares/authGuard";
 import { sendMail } from "../utils/sendMail";
 import bcrypt from "bcryptjs";
+import TimeSession from "../models/TimeSession";
+import mongoose from "mongoose";
 const generatePassword = () => {
   return Math.random().toString(36).slice(-8);
 };
@@ -245,5 +247,86 @@ export const getMyCompanyEmployees = async (req: AuthRequest, res: Response) => 
       success: false,
       message: error.message || "Failed to retrieve company employees",
     });
+  }
+};
+
+export const getCompanyEmployeesWithHours = async (req: AuthRequest, res: Response) => {
+  try {
+    const loggedInUser = req.user as any;
+    if (loggedInUser.role !== "COMPANY") {
+      return res.status(403).json({ success: false, message: "Only companies can access employees" });
+    }
+
+    const companyId = loggedInUser.userId;
+
+    // ✅ Get today's date string matching your DB format "YYYY-MM-DD"
+    const todayStr = new Date().toISOString().split('T')[0]; 
+
+    const employees = await User.find({ company: companyId })
+      .select("_id name status")
+      .sort({ createdAt: -1 });
+
+    const employeeIds = employees.map(emp => emp._id);
+
+    const todaySessions = await TimeSession.aggregate([
+      {
+        $match: {
+          // ✅ Match by the string "date" field to avoid timezone offsets
+          date: todayStr, 
+          user: { $in: employeeIds }
+        },
+      },
+      {
+        $project: {
+          user: 1,
+          clockIn: 1,
+          clockOut: 1,
+          // ✅ Handle active sessions: if totalDuration is 0 or missing, calculate live
+          duration: {
+            $cond: {
+              if: { $or: [{ $eq: ["$totalDuration", 0] }, { $not: ["$totalDuration"] }] },
+              then: { $divide: [{ $subtract: [new Date(), "$clockIn"] }, 1000] },
+              else: "$totalDuration",
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$user",
+          firstClockIn: { $min: "$clockIn" },
+          lastClockOut: { $max: "$clockOut" },
+          totalSeconds: { $sum: "$duration" },
+        },
+      },
+    ]);
+
+    const workingMap: Record<string, any> = {};
+    todaySessions.forEach(session => {
+      workingMap[session._id.toString()] = {
+        firstClockIn: session.firstClockIn,
+        lastClockOut: session.lastClockOut,
+        totalHours: session.totalSeconds / 3600,
+      };
+    });
+
+    const employeeData = employees.map(emp => {
+      const workData = workingMap[emp._id.toString()] || {};
+      return {
+        id: emp._id,
+        name: emp.name,
+        status: emp.status,
+        todayClockIn: workData.firstClockIn || null,
+        todayClockOut: workData.lastClockOut || null,
+        workingHours: workData.totalHours ? parseFloat(workData.totalHours.toFixed(2)) : 0,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      employees: employeeData,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
