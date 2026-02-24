@@ -22,7 +22,12 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json());
+app.use(express.json({
+  strict: true,
+  type: (req) => req.method !== 'GET' && req.headers['content-type']?.includes('application/json')
+}));
+
+// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/time-session", timeSessionRoutes);
 app.use("/api/user", userRoutes);

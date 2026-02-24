@@ -263,7 +263,7 @@ export const getCompanyEmployeesWithHours = async (req: AuthRequest, res: Respon
     const todayStr = new Date().toISOString().split('T')[0]; 
 
     const employees = await User.find({ company: companyId })
-      .select("_id name status")
+      .select("_id name status email teamName")
       .sort({ createdAt: -1 });
 
     const employeeIds = employees.map(emp => emp._id);
@@ -316,6 +316,8 @@ export const getCompanyEmployeesWithHours = async (req: AuthRequest, res: Respon
         id: emp._id,
         name: emp.name,
         status: emp.status,
+        email: emp.email,
+        team: emp.teamName,
         todayClockIn: workData.firstClockIn || null,
         todayClockOut: workData.lastClockOut || null,
         workingHours: workData.totalHours ? parseFloat(workData.totalHours.toFixed(2)) : 0,

@@ -3,6 +3,8 @@ import Team from "../models/Team";
 import User from "../models/User";
 import mongoose from "mongoose";
 import { AuthRequest } from "../middlewares/authGuard";
+import TimeSession from "../models/TimeSession";
+import Screenshot from "../models/Screenshot";
 
 export const createTeam = async (req: AuthRequest, res: Response) => {
   try {
@@ -246,6 +248,145 @@ export const getMyCompanyTeams = async (req: AuthRequest, res: Response) => {
       success: true,
       count: teams.length,
       teams,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getTeamFullDetailsById = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const loggedUser = req.user as any;
+    const companyId = loggedUser.userId;
+    const { teamId } = req.params;
+
+    if (!companyId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    if (!teamId) {
+      return res.status(400).json({
+        success: false,
+        message: "Team ID is required",
+      });
+    }
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    // Get specific team
+    const team = await Team.findOne({
+      _id: teamId,
+      company: companyId,
+    })
+      .populate("teamLead", "name email status")
+      .populate("members", "name email status");
+
+    if (!team) {
+      return res.status(404).json({
+        success: false,
+        message: "Team not found",
+      });
+    }
+
+    let totalTeamSeconds = 0;
+    let totalProductivity = 0;
+    let lateArrivals = 0;
+
+    const membersData = [];
+
+    for (const member of team.members as any[]) {
+      // Get today's sessions
+      const sessions = await TimeSession.find({
+        user: member._id,
+        company: companyId,
+        date: todayStart.toISOString().split("T")[0],
+      }).sort({ clockIn: 1 });
+
+      let userTotalSeconds = 0;
+      const sessionDetails = [];
+
+      // Fetch screenshots linked to each session
+      for (const session of sessions) {
+        userTotalSeconds += session.totalDuration || 0;
+
+        const screenshots = await Screenshot.find({
+          userId: member._id,
+          takenAt: { $gte: session.clockIn, $lte: session.clockOut || todayEnd },
+        }).select("imageUrl takenAt");
+
+        sessionDetails.push({
+          sessionId: session._id,
+          clockIn: session.clockIn,
+          clockOut: session.clockOut,
+          totalSeconds: session.totalDuration || 0,
+          screenshots: screenshots.length > 0 ? screenshots : null,
+        });
+      }
+
+      // Fetch screenshots taken today but not linked to any session
+      const todayScreenshots = await Screenshot.find({
+        userId: member._id,
+        takenAt: { $gte: todayStart, $lte: todayEnd },
+        _id: { $nin: sessionDetails.flatMap((s) =>
+          s.screenshots ? s.screenshots.map((sc: any) => sc._id) : []
+        ) },
+      }).select("imageUrl takenAt");
+
+      totalTeamSeconds += userTotalSeconds;
+
+      const productivity =
+        userTotalSeconds > 0 ? Math.min((userTotalSeconds / 28800) * 100, 100) : 0;
+
+      totalProductivity += productivity;
+
+      // Late arrival (after 9:30 AM)
+      const firstSession = sessions[0];
+      if (firstSession) {
+        const clockIn = new Date(firstSession.clockIn);
+        if (clockIn.getHours() > 9 || (clockIn.getHours() === 9 && clockIn.getMinutes() > 30)) {
+          lateArrivals++;
+        }
+      }
+
+      membersData.push({
+        _id: member._id,
+        name: member.name,
+        email: member.email,
+        status: member.status,
+        totalHoursToday: (userTotalSeconds / 3600).toFixed(2),
+        productivity: productivity.toFixed(2),
+        sessions: sessionDetails,
+        additionalScreenshots: todayScreenshots.length > 0 ? todayScreenshots : null, // ✅ Screenshots not linked to sessions
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      team: {
+        teamId: team._id,
+        teamName: team.teamName,
+        teamLead: team.teamLead,
+        totalTeamHoursToday: (totalTeamSeconds / 3600).toFixed(2),
+        avgProductivity:
+          team.members.length > 0
+            ? (totalProductivity / team.members.length).toFixed(2)
+            : 0,
+        lateArrivals,
+        members: membersData,
+      },
     });
   } catch (error: any) {
     return res.status(500).json({
