@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { clockIn, clockOut, getCompanyTimeLogs, getTimeSessions, getTodaySession } from "../controllers/timeSession.controller";
+import { clockIn, clockOut, getCompanyTimeLogs, getTimeSessions, getTodaySession, getTodayTotalSeconds } from "../controllers/timeSession.controller";
 import { authGuard } from "../middlewares/authGuard";
 import { getStats } from "../controllers/timeSession.controller";
 
@@ -11,5 +11,5 @@ router.get("/today", authGuard, getTodaySession);
 router.get("/stats/today-yesterday", authGuard, getStats);
 router.get("/sessions", authGuard, getTimeSessions);
 router.get("/companySessions", authGuard, getCompanyTimeLogs);
-
+router.get("/today-total", authGuard, getTodayTotalSeconds)
 export default router;

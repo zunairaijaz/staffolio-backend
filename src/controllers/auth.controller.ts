@@ -110,7 +110,7 @@ export const login = async (req: Request, res: Response) => {
       countryCode: user.countryCode,
       phone: user.phone,
       LastLogin: user.lastLogin,
-
+      company: user.company,
       isVerified: user.isVerified
     };
 

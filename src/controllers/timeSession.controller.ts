@@ -45,13 +45,20 @@ export const clockIn = async (req: AuthRequest, res: Response) => {
     if (!userId) return res.status(401).json({ success: false, message: "User ID missing in token" });
 
     const todayDate = getTodayDate();
-    const activeSession = await TimeSession.findOne({ user: userId, isActive: true });
 
-    if (activeSession) {
-      return res.status(400).json({ success: false, message: "Already clocked in" });
+    let session = await TimeSession.findOne({ user: userId, isActive: true });
+
+    if (session) {
+      // Instead of failing, just return the active session
+      return res.json({ 
+        success: true, 
+        message: "Already clocked in. Session resumed.", 
+        session 
+      });
     }
 
-    const session = await TimeSession.create({
+    // If no active session, create a new one
+    session = await TimeSession.create({
       user: new mongoose.Types.ObjectId(userId),
       date: todayDate,
       clockIn: new Date(),
@@ -132,7 +139,6 @@ export const getStats = async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ success: false, message: "User ID missing" });
     }
 
-    // ✅ Convert seconds → HH:MM:SS
     const formatDuration = (totalSeconds: number) => {
       const hrs = Math.floor(totalSeconds / 3600);
       const mins = Math.floor((totalSeconds % 3600) / 60);
@@ -149,10 +155,20 @@ export const getStats = async (req: AuthRequest, res: Response) => {
     // ---------- YESTERDAY ----------
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-
     const offset = yesterday.getTimezoneOffset();
     const localYesterday = new Date(yesterday.getTime() - offset * 60 * 1000);
     const yesterdayDate = localYesterday.toISOString().split("T")[0];
+
+    // ---------- THIS WEEK ----------
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() + diffToMonday);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(); // up to now
 
     // ---------- LAST MONTH ----------
     const startOfLastMonth = new Date();
@@ -161,7 +177,7 @@ export const getStats = async (req: AuthRequest, res: Response) => {
     startOfLastMonth.setHours(0, 0, 0, 0);
 
     const endOfLastMonth = new Date();
-    endOfLastMonth.setDate(0); // last day of previous month
+    endOfLastMonth.setDate(0);
     endOfLastMonth.setHours(23, 59, 59, 999);
 
     // ---------- FETCH DATA ----------
@@ -169,9 +185,11 @@ export const getStats = async (req: AuthRequest, res: Response) => {
       user: userId,
       isActive: false,
     });
+
     // ---------- CALCULATIONS ----------
     let todaySeconds = 0;
     let yesterdaySeconds = 0;
+    let weekSeconds = 0;
     let lastMonthSeconds = 0;
 
     sessions.forEach((s) => {
@@ -187,28 +205,33 @@ export const getStats = async (req: AuthRequest, res: Response) => {
         yesterdaySeconds += duration;
       }
 
-      // Last Month
+      // This Week
       if (s.clockIn) {
         const clockInTime = new Date(s.clockIn);
+        if (clockInTime >= startOfWeek && clockInTime <= endOfWeek) {
+          weekSeconds += duration;
+        }
 
+        // Last Month
         if (clockInTime >= startOfLastMonth && clockInTime <= endOfLastMonth) {
           lastMonthSeconds += duration;
         }
       }
     });
 
-    // ✅ RETURN FORMATTED RESPONSE
     return res.json({
       success: true,
 
-      // Raw seconds (optional)
+      // Raw seconds
       todaySeconds,
       yesterdaySeconds,
+      weekSeconds,
       lastMonthSeconds,
 
-      // ✅ Formatted values
+      // Formatted
       today: formatDuration(todaySeconds),
       yesterday: formatDuration(yesterdaySeconds),
+      thisWeek: formatDuration(weekSeconds),
       lastMonth: formatDuration(lastMonthSeconds),
     });
   } catch (error: any) {
@@ -216,7 +239,6 @@ export const getStats = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
-
 export const getTimeSessions = async (req: AuthRequest, res: Response) => {
   try {
     const requesterId = getUserId(req);
@@ -372,5 +394,32 @@ export const getCompanyTimeLogs = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error("❌ getCompanyTimeLogs Error:", error);
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+export const getTodayTotalSeconds = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const todayDate = getTodayDate();
+
+    // ✅ Get all today's sessions
+    const sessions = await TimeSession.find({ user: userId, date: todayDate });
+
+    let totalSeconds = 0;
+
+    sessions.forEach((s) => {
+      if (s.totalDuration) {
+        totalSeconds += s.totalDuration;
+      } else if (s.isActive && s.clockIn) {
+        // If session is active, add elapsed time so far
+        const elapsed = Math.floor((Date.now() - new Date(s.clockIn).getTime()) / 1000);
+        totalSeconds += elapsed;
+      }
+    });
+
+    res.json({ success: true, totalSeconds });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

@@ -1,4 +1,4 @@
-import { Response } from "express";
+import { Request, Response } from "express";
 import User from "../models/User";
 import { AuthRequest } from "../middlewares/authGuard";
 import { sendMail } from "../utils/sendMail";
@@ -330,5 +330,67 @@ export const getCompanyEmployeesWithHours = async (req: AuthRequest, res: Respon
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const deactivateEmployee = async (req: AuthRequest, res: Response) => {
+  try {
+    const admin = req.user as any;
+
+    // Ensure employeeId is a string
+    let employeeId = req.params.id;
+    if (Array.isArray(employeeId)) {
+      employeeId = employeeId[0]; // take the first value
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(employeeId)) {
+      return res.status(400).json({ success: false, message: "Invalid employee ID" });
+    }
+
+    // Only companies can deactivate their employees
+    if (admin.role !== "COMPANY") {
+      return res.status(403).json({ success: false, message: "Only companies can deactivate employees" });
+    }
+
+    // Make sure employee belongs to this company
+    const employee = await User.findOne({ _id: employeeId, company: admin.userId });
+    if (!employee) {
+      return res.status(404).json({ success: false, message: "Employee not found in your company" });
+    }
+
+    // Update status to INACTIVE
+    employee.status = "INACTIVE";
+    await employee.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `${employee.name} has been deactivated successfully`,
+      employee: {
+        id: employee._id,
+        name: employee.name,
+        email: employee.email,
+        status: employee.status,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message || "Failed to deactivate employee" });
+  }
+};
+
+export const getWeeklyPerformance = async (req: Request, res: Response) => {
+  try {
+    const employeeId = req.params.id; 
+
+    // Simple dummy response for testing
+    const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    const performance = weekDays.map(day => ({
+      day,
+      score: Math.floor(Math.random() * 100),
+    }));
+
+    res.json({ success: true, performance });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };

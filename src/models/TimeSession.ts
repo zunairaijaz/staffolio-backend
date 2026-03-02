@@ -13,7 +13,7 @@ export interface ITimeSession extends Document {
 const timeSessionSchema = new Schema<ITimeSession>(
   {
     user: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    company: { type: Schema.Types.ObjectId, ref: "Company", required: true }, // ✅ add this
+    // company: { type: Schema.Types.ObjectId, ref: "Company", required: true }, // ✅ add this
     clockIn: { type: Date, required: true },
     clockOut: { type: Date },
     totalDuration: { type: Number },
