@@ -326,15 +326,22 @@ export const getTimeSessions = async (req: AuthRequest, res: Response) => {
 
 export const getCompanyTimeLogs = async (req: AuthRequest, res: Response) => {
   try {
-    const companyId =  req.headers["x-company-id"];
+    const companyId = req.headers["x-company-id"];
     if (!companyId) {
-      return res.status(401).json({ success: false, message: "Unauthorized: Company ID missing" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Unauthorized: Company ID missing" });
     }
 
     const { startDate, endDate, status } = req.query;
 
+    // Convert companyId to ObjectId
+    const companyObjectId = new mongoose.Types.ObjectId(companyId as string);
+
     // 1️⃣ Get all employees of this company
-    const employees = await User.find({ company: companyId }).select("_id name email teamName status role");
+    const employees = await User.find({ company: companyObjectId }).select(
+      "_id name email teamName status role"
+    );
 
     if (!employees.length) {
       return res.json({ success: true, count: 0, logs: [] });
@@ -342,52 +349,75 @@ export const getCompanyTimeLogs = async (req: AuthRequest, res: Response) => {
 
     const employeeIds = employees.map((e) => e._id);
 
-    // 2️⃣ Build TimeSession query for these employees
+    // 2️⃣ Build TimeSession query
     const query: any = {
       user: { $in: employeeIds },
-      company: companyId, // ✅ Make sure you filter by company too
     };
-
-    // Status filter
     if (status === "active") query.isActive = true;
     if (status === "completed") query.isActive = false;
 
-    // Date range filter
     if (startDate || endDate) query.clockIn = {};
     if (startDate) query.clockIn.$gte = new Date(startDate as string);
     if (endDate) query.clockIn.$lte = new Date(endDate as string);
 
-    // 3️⃣ Fetch sessions and populate user info
+    // 3️⃣ Fetch all sessions for these employees
     const sessions = await TimeSession.find(query)
       .populate({ path: "user", select: "_id name email teamName status role" })
-      .sort({ clockIn: -1 });
+      .sort({ clockIn: 1 }); // sort ascending to easily get first clock-in
 
-    // 4️⃣ Format sessions
-    const logs = sessions.map((s) => {
+    // 4️⃣ Group by employee
+    const logsMap: Record<string, any> = {};
+
+    sessions.forEach((s) => {
       const user = s.user as any;
-      const clockIn = s.clockIn ? new Date(s.clockIn) : null;
-      const clockOut = s.clockOut ? new Date(s.clockOut) : null;
+      if (!user) return;
 
-      const durationSeconds =
-        s.totalDuration ??
-        (clockIn && clockOut ? Math.floor((clockOut.getTime() - clockIn.getTime()) / 1000) : 0);
-
-      return {
-        id: s._id,
-        user: {
-          id: user?._id,
-          name: user?.name,
-          email: user?.email,
-          department: user?.teamName || "N/A",
-          status: user?.status || "Unknown",
-        },
-        clockIn: clockIn?.toISOString(),
-        clockOut: clockOut?.toISOString(),
-        duration: durationSeconds,
-        durationFormatted: new Date(durationSeconds * 1000).toISOString().substr(11, 8),
-        isActive: s.isActive,
-      };
+      if (!logsMap[user._id.toString()]) {
+        logsMap[user._id.toString()] = {
+          id: user._id,
+          user: {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            department: user.teamName || "N/A",
+            status: user.status || "Unknown",
+          },
+          clockIn: s.clockIn ? new Date(s.clockIn).toISOString() : null,
+          clockOut: s.clockOut ? new Date(s.clockOut).toISOString() : null,
+          duration: s.totalDuration ?? 0,
+          isActive: s.isActive ?? false,
+        };
+      } else {
+        // Update clockOut to latest
+        const existing = logsMap[user._id.toString()];
+        const sessionClockOut = s.clockOut ? new Date(s.clockOut) : null;
+        if (sessionClockOut) {
+          const existingClockOut = existing.clockOut
+            ? new Date(existing.clockOut)
+            : null;
+          if (!existingClockOut || sessionClockOut > existingClockOut) {
+            existing.clockOut = sessionClockOut.toISOString();
+            // Recalculate duration if clockIn exists
+            if (existing.clockIn) {
+              const durationSeconds =
+                Math.floor(
+                  (sessionClockOut.getTime() - new Date(existing.clockIn).getTime()) /
+                    1000
+                ) || 0;
+              existing.duration = durationSeconds;
+            }
+          }
+        }
+      }
     });
+
+    // 5️⃣ Convert map to array and format duration
+    const logs = Object.values(logsMap).map((l: any) => ({
+      ...l,
+      durationFormatted: new Date(l.duration * 1000)
+        .toISOString()
+        .substr(11, 8),
+    }));
 
     return res.json({ success: true, count: logs.length, logs });
   } catch (error: any) {
@@ -420,5 +450,110 @@ export const getTodayTotalSeconds = async (req: AuthRequest, res: Response) => {
     res.json({ success: true, totalSeconds });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ================= MONTHLY EMPLOYEE DAILY LOGS + SCREENSHOTS =================
+export const getEmployeeMonthlyLogs = async (req: AuthRequest, res: Response) => {
+  try {
+    const { employeeId, month, year } = req.query;
+
+    if (!employeeId || !month || !year) {
+      return res.status(400).json({
+        success: false,
+        message: "employeeId, month and year are required",
+      });
+    }
+
+    const monthNumber = Number(month) - 1;
+    const yearNumber = Number(year);
+
+    const startDate = new Date(yearNumber, monthNumber, 1);
+    const endDate = new Date(yearNumber, monthNumber + 1, 0, 23, 59, 59);
+
+   const logs = await TimeSession.aggregate([
+  {
+    $match: {
+      user: new mongoose.Types.ObjectId(employeeId as string),
+      clockIn: { $gte: startDate, $lte: endDate },
+      isActive: false,
+    },
+  },
+
+  {
+    $addFields: {
+      dateOnly: {
+        $dateToString: { format: "%Y-%m-%d", date: "$clockIn" },
+      },
+    },
+  },
+
+  {
+    $group: {
+      _id: "$dateOnly",
+      firstClockIn: { $min: "$clockIn" },
+      lastClockOut: { $max: "$clockOut" },
+      totalSeconds: { $sum: { $ifNull: ["$totalDuration", 0] } },
+    },
+  },
+
+  // 🔥 LOOKUP screenshots for that day
+  {
+    $lookup: {
+      from: "screenshots", // collection name in MongoDB
+      let: { date: "$_id" },
+      pipeline: [
+        {
+          $match: {
+            userId: new mongoose.Types.ObjectId(employeeId as string),
+          },
+        },
+        {
+          $addFields: {
+            screenshotDate: {
+              $dateToString: { format: "%Y-%m-%d", date: "$takenAt" },
+            },
+          },
+        },
+        {
+          $match: {
+            $expr: { $eq: ["$screenshotDate", "$$date"] },
+          },
+        },
+        {
+          $project: {
+            _id: 1,
+            imageUrl: 1,
+            takenAt: 1,
+          },
+        },
+      ],
+      as: "screenshots",
+    },
+  },
+
+  { $sort: { _id: -1 } },
+]);
+
+    return res.json({
+      success: true,
+      count: logs.length,
+      logs: logs.map((log) => ({
+        date: log._id,
+        clockIn: log.firstClockIn,
+        clockOut: log.lastClockOut,
+        totalSeconds: log.totalSeconds,
+        totalFormatted: new Date(log.totalSeconds * 1000)
+          .toISOString()
+          .substr(11, 8),
+        screenshots: log.screenshots || [],
+      })),
+    });
+  } catch (error: any) {
+    console.error("❌ getEmployeeMonthlyLogs Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };

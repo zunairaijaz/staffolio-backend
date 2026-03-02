@@ -86,7 +86,6 @@ export const getAppUsageReport = async (req: Request, res: Response) => {
   }
 };
 
-// --- API 1: MONTHLY LOGS (Daily Clock-in/out Details) ---
 export const getMonthlyLogsReport = async (req: Request, res: Response) => {
   try {
     const { employeeId, startDate, endDate } = req.query;
@@ -96,53 +95,65 @@ export const getMonthlyLogsReport = async (req: Request, res: Response) => {
       match.user = new mongoose.Types.ObjectId(employeeId as string);
     }
     if (startDate && endDate) {
-      match.date = { $gte: startDate, $lte: endDate };
+      match.startTime = { $gte: new Date(startDate as string), $lte: new Date(endDate as string) };
     }
 
     const logs = await ActivityLog.aggregate([
       { $match: match },
+
+      // Convert startTime to just date string (YYYY-MM-DD) for grouping
+      {
+        $addFields: {
+          day: {
+            $dateToString: { format: "%Y-%m-%d", date: "$startTime" },
+          },
+        },
+      },
+
       {
         $group: {
           _id: {
             user: "$user",
-            date: "$date" // Group by date to get daily first/last activity
+            day: "$day",
           },
           clockIn: { $min: "$startTime" },
           clockOut: { $max: "$endTime" },
-          totalSeconds: { $sum: "$duration" }
-        }
+          totalSeconds: { $sum: "$duration" },
+        },
       },
+
       {
         $lookup: {
           from: "users",
           localField: "_id.user",
           foreignField: "_id",
-          as: "userDetails"
-        }
+          as: "userDetails",
+        },
       },
       { $unwind: "$userDetails" },
+
       {
         $project: {
           _id: 0,
           employeeId: "$_id.user",
           name: "$userDetails.name",
           email: "$userDetails.email",
-          date: "$_id.date",
+          date: "$_id.day",
           clockIn: 1,
           clockOut: 1,
-          totalHours: { $divide: ["$totalSeconds", 3600] }
-        }
+          totalHours: { $divide: ["$totalSeconds", 3600] },
+        },
       },
-      { $sort: { date: -1 } }
+
+      { $sort: { date: -1 } },
     ]);
 
     return res.status(200).json({ success: true, data: logs });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: "Error fetching logs" });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// --- API 2: ATTENDANCE SUMMARY (Heatmap Logic) ---
 // --- API 2: ATTENDANCE SUMMARY (Updated) ---
 export const getAttendanceReport = async (req: Request, res: Response) => {
   try {

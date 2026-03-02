@@ -8,6 +8,10 @@ export interface ITimeSession extends Document {
   date: string; // YYYY-MM-DD
   company: mongoose.Types.ObjectId,
   isActive: boolean;
+  screenshots?: {
+  imageUrl: string;
+  takenAt: Date;
+}[];
 }
 
 const timeSessionSchema = new Schema<ITimeSession>(
@@ -19,6 +23,12 @@ const timeSessionSchema = new Schema<ITimeSession>(
     totalDuration: { type: Number },
     date: { type: String, required: true },
     isActive: { type: Boolean, default: true },
+screenshots: [
+  {
+    imageUrl: { type: String },
+    takenAt: { type: Date, default: Date.now },
+  },
+],
   },
   { timestamps: true }
 );
