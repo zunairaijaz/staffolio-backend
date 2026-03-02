@@ -77,8 +77,7 @@ export const clockOut = async (req: AuthRequest, res: Response) => {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ success: false, message: "User ID missing in token" });
 
-    const { totalWorkedSeconds } = req.body; 
-
+    const { totalWorkedSeconds } = req.body || {};
     const session = await TimeSession.findOne({
       user: new mongoose.Types.ObjectId(userId),
       isActive: true,
