@@ -15,22 +15,22 @@ export interface ITimeSession extends Document {
 }
 
 const timeSessionSchema = new Schema<ITimeSession>(
-  {
-    user: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    // company: { type: Schema.Types.ObjectId, ref: "Company", required: true }, // ✅ add this
-    clockIn: { type: Date, required: true },
-    clockOut: { type: Date },
-    totalDuration: { type: Number },
-    date: { type: String, required: true },
-    isActive: { type: Boolean, default: true },
-screenshots: [
-  {
-    imageUrl: { type: String },
-    takenAt: { type: Date, default: Date.now },
-  },
-],
-  },
-  { timestamps: true }
+{
+  user: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  company: { type: Schema.Types.ObjectId, ref: "Company", required: true },
+  clockIn: { type: Date, required: true },
+  clockOut: { type: Date },
+  totalDuration: { type: Number },
+  date: { type: String, required: true },
+  isActive: { type: Boolean, default: true },
+  screenshots: [
+    {
+      imageUrl: { type: String },
+      takenAt: { type: Date, default: Date.now },
+    },
+  ],
+},
+{ timestamps: true }
 );
 
 export default mongoose.model<ITimeSession>("TimeSession", timeSessionSchema);

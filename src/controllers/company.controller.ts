@@ -33,12 +33,12 @@ export const loginCompany = async (req: Request<{}, {}, CompanyLoginBody>, res: 
   try {
     const { email, password } = req.body;
     const company = await Company.findOne({ email });
-    if (!company) return res.status(401).json({ success: false, message: "Invalid credentials" });
+    if (!company) return res                                                                                        .status(401).json({ success: false, message: "Invalid credentials" });
 
     const isValid = await comparePassword(password, company.password);
     if (!isValid) return res.status(401).json({ success: false, message: "Invalid credentials" });
 
-    const token = generateToken(company._id.toString(), "COMPANY");
+    const token = generateToken(company._id.toString(), "COMPANY"); // now includes company in JWT
     res.json({ success: true, token, company });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
