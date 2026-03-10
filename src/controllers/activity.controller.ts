@@ -15,16 +15,26 @@ function formatTime(seconds: number) {
 }
 const PRODUCTIVE_APPS = [
   "Visual Studio",
+  "Visual Studio Code",
+  "VS Code",
   "Postman",
   "Slack",
   "Figma",
-  "Chrome", // for work-related sites only if you filter
   "IntelliJ",
-  "VS Code",
   "Terminal",
+  "iTerm",
   "Excel",
-  "Github"
-];const IDLE_APPS = ["Idle", "Whatsap", "Youtube", "Netflix", "Facebook", "Instagram"];
+  "Chrome", 
+  "Google Chrome",
+  "Web: Github",
+  "Web: Stack Overflow",
+  "Web: Jira",
+  "Web: Azure",
+  "Web: Meet",
+  "Web: Zoom"
+];
+
+const IDLE_APPS = ["Idle", "Whatsap", "Youtube", "Netflix", "Facebook", "Instagram"];
 
 /* ----------------------------------------
    GET /api/activity/weekly/:userId
@@ -85,23 +95,36 @@ export const getLast7DaysActivity = async (req: Request, res: Response) => {
    ✅ Log App Usage API
    POST /api/activity/log
 ---------------------------------------- */
+// Add this helper to your Express controller
+const parseActivityName = (appName: string, title: string) => {
+  const browsers = ["Google Chrome", "Brave", "Microsoft Edge", "Firefox", "Safari"];
+  
+  if (browsers.includes(appName)) {
+    // Standard browsers put the site name before the app name in the title
+    // Example: "Stack Overflow - Where Developers Learn - Google Chrome"
+    const parts = title.split(" - ");
+    if (parts.length > 1) {
+      return `Web: ${parts[0]}`; // Returns "Web: Stack Overflow"
+    }
+  }
+  return appName; // Returns "Visual Studio Code"
+};
+
 export const logActivity = async (req: Request, res: Response) => {
   try {
-    const { userId, appName, duration } = req.body;
+    const { userId, appName, title, duration } = req.body; // Added title
 
     if (!userId || !appName || !duration) {
-      return res.status(400).json({
-        success: false,
-        message: "userId, appName and duration are required",
-      });
+      return res.status(400).json({ success: false, message: "Missing data" });
     }
 
+    // ✅ Determine if it's a website or an app
+    const finalActivityName = parseActivityName(appName, title || "");
     const today = new Date().toISOString().split("T")[0];
 
-    // Check if same app already exists today
     let existing = await ActivityLog.findOne({
       user: userId,
-      appName,
+      appName: finalActivityName,
       date: today,
     });
 
@@ -111,22 +134,15 @@ export const logActivity = async (req: Request, res: Response) => {
     } else {
       await ActivityLog.create({
         user: userId,
-        appName,
+        appName: finalActivityName,
         duration,
         date: today,
       });
     }
 
-    res.json({
-      success: true,
-      message: "Activity logged successfully",
-    });
+    res.json({ success: true });
   } catch (error) {
-    console.error("Activity Log Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
