@@ -42,24 +42,27 @@ const getTodayDate = () => {
 export const clockIn = async (req: AuthRequest, res: Response) => {
   try {
     const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ success: false, message: "User ID missing in token" });
+    // 1. Get the company ID from the header you are sending
+    const companyId = req.headers["x-company-id"] || (req.user as any)?.companyId;
+
+    if (!userId) return res.status(401).json({ success: false, message: "User ID missing" });
+    
+    // 2. Catch it here before Mongoose fails
+    if (!companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing in headers" });
+    }
 
     const todayDate = getTodayDate();
-
     let session = await TimeSession.findOne({ user: userId, isActive: true });
 
     if (session) {
-      // Instead of failing, just return the active session
-      return res.json({ 
-        success: true, 
-        message: "Already clocked in. Session resumed.", 
-        session 
-      });
+      return res.json({ success: true, message: "Already clocked in.", session });
     }
 
-    // If no active session, create a new one
+    // 3. ✅ ADD THE COMPANY FIELD HERE
     session = await TimeSession.create({
       user: new mongoose.Types.ObjectId(userId),
+      company: new mongoose.Types.ObjectId(companyId as string), // THIS IS THE FIX
       date: todayDate,
       clockIn: new Date(),
       isActive: true,
@@ -70,7 +73,6 @@ export const clockIn = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
-
 // ================= CLOCK OUT (Hubstaff/Workfolio Style) =================
 export const clockOut = async (req: AuthRequest, res: Response) => {
   try {
