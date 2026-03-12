@@ -44,3 +44,48 @@ export const loginCompany = async (req: Request<{}, {}, CompanyLoginBody>, res: 
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+export const updateCompanyProfile = async (req: Request, res: Response) => {
+ 
+  try {
+const companyId = (req as any).user.userId;
+    const { name, phone, region, language, password } = req.body;
+
+    // 1. Prepare the update object
+    const updateData: any = { 
+      name, 
+      phone, 
+      region, 
+      language,
+      updatedAt: new Date() 
+    };
+
+    // 2. Only hash and update password if the user actually typed a new one
+    if (password && password.trim().length >= 8) {
+      updateData.password = await hashPassword(password);
+    }
+
+    // 3. Update the database
+    const updatedCompany = await Company.findByIdAndUpdate(
+      companyId,
+      { $set: updateData },
+      { 
+        new: true, // Returns the modified document rather than the original
+        runValidators: true // Ensures the new data follows your Schema rules
+      }
+    ).select("-password"); // Security: do not send the hash back to the client
+
+    if (!updatedCompany) {
+      return res.status(404).json({ success: false, message: "Company not found" });
+    }
+
+    res.json({ 
+      success: true, 
+      message: "Profile updated successfully", 
+      company: updatedCompany 
+    });
+  } catch (err: any) {
+    console.error("Update Error:", err);
+    res.status(500).json({ success: false, message: "Server error during update" });
+  }
+};

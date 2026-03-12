@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import moment from "moment";
 import ActivityLog from "../models/ActivityLog";
 import User from "../models/User";
+import TimeSession from "../models/TimeSession";
 
 export const getAppUsageReport = async (req: Request, res: Response) => {
   try {
@@ -86,6 +87,7 @@ export const getAppUsageReport = async (req: Request, res: Response) => {
   }
 };
 
+// Import the correct model
 export const getMonthlyLogsReport = async (req: Request, res: Response) => {
   try {
     const { employeeId, startDate, endDate } = req.query;
@@ -94,37 +96,34 @@ export const getMonthlyLogsReport = async (req: Request, res: Response) => {
     if (employeeId) {
       match.user = new mongoose.Types.ObjectId(employeeId as string);
     }
+
+    // Filter by the 'clockIn' Date object
     if (startDate && endDate) {
-      match.startTime = { $gte: new Date(startDate as string), $lte: new Date(endDate as string) };
+      match.clockIn = { 
+        $gte: new Date(startDate as string), 
+        $lte: new Date(endDate as string) 
+      };
     }
 
-    const logs = await ActivityLog.aggregate([
+    const logs = await TimeSession.aggregate([
       { $match: match },
-
-      // Convert startTime to just date string (YYYY-MM-DD) for grouping
-      {
-        $addFields: {
-          day: {
-            $dateToString: { format: "%Y-%m-%d", date: "$startTime" },
-          },
-        },
-      },
 
       {
         $group: {
           _id: {
             user: "$user",
-            day: "$day",
+            day: "$date", // Using your 'YYYY-MM-DD' string field
           },
-          clockIn: { $min: "$startTime" },
-          clockOut: { $max: "$endTime" },
-          totalSeconds: { $sum: "$duration" },
+          // Pulling the actual values from your TimeSession schema
+          clockIn: { $min: "$clockIn" },
+          clockOut: { $max: "$clockOut" },
+          totalSeconds: { $sum: "$totalDuration" },
         },
       },
 
       {
         $lookup: {
-          from: "users",
+          from: "users", // Ensure your collection name is 'users'
           localField: "_id.user",
           foreignField: "_id",
           as: "userDetails",
@@ -141,7 +140,9 @@ export const getMonthlyLogsReport = async (req: Request, res: Response) => {
           date: "$_id.day",
           clockIn: 1,
           clockOut: 1,
-          totalHours: { $divide: ["$totalSeconds", 3600] },
+          totalHours: { 
+            $divide: [{ $ifNull: ["$totalSeconds", 0] }, 3600] 
+          },
         },
       },
 
@@ -154,65 +155,70 @@ export const getMonthlyLogsReport = async (req: Request, res: Response) => {
   }
 };
 
-// --- API 2: ATTENDANCE SUMMARY (Updated) ---
 export const getAttendanceReport = async (req: Request, res: Response) => {
   try {
-    const { employeeId, month, year } = req.query;
-    
-    const startOfMonth = moment([parseInt(year as string), parseInt(month as string) - 1]).startOf('month');
-    const endOfMonth = moment(startOfMonth).endOf('month');
-    const daysInMonth = endOfMonth.date();
+    const { employeeId } = req.query;
 
-    const attendanceData = await ActivityLog.aggregate([
-      { 
-        $match: { 
-          user: new mongoose.Types.ObjectId(employeeId as string),
-          date: { $gte: startOfMonth.format("YYYY-MM-DD"), $lte: endOfMonth.format("YYYY-MM-DD") }
-        } 
-      },
-      {
-        $group: {
-          _id: "$date",
-          totalDuration: { $sum: "$duration" },
-          firstEntry: { $min: "$startTime" }
-        }
-      },
-      {
-        $facet: {
-          dailyStats: [
-            {
-              $project: {
-                date: "$_id",
-                status: { $cond: [{ $gt: ["$totalDuration", 0] }, "present", "absent"] },
-                isLate: { $gt: [{ $hour: { $toDate: "$firstEntry" } }, 9] }
-              }
-            }
-          ],
-          summary: [
-            {
-              $group: {
-                _id: null,
-                presentDays: { $sum: 1 },
-                lateDays: { $sum: { $cond: [{ $gt: [{ $hour: { $toDate: "$firstEntry" } }, 9] }, 1, 0] } }
-              }
-            }
-          ]
-        }
-      }
-    ]);
+    if (!employeeId) {
+      return res.status(400).json({ success: false, message: "Employee ID is required" });
+    }
 
-    const stats = attendanceData[0].summary[0] || { presentDays: 0, lateDays: 0 };
-    const result = {
-      dailyBreakdown: attendanceData[0].dailyStats,
-      summary: {
-        present: stats.presentDays,
-        late: stats.lateDays,
-        absent: Math.max(0, daysInMonth - stats.presentDays)
-      }
+    // 1. Calculate Date Range (1st of current month to Now)
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1); 
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+    const match: any = {
+      user: new mongoose.Types.ObjectId(employeeId as string),
+      clockIn: { $gte: startOfMonth, $lte: endOfToday }
     };
 
-    return res.status(200).json({ success: true, data: result });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: "Error fetching attendance" });
+    const logs = await TimeSession.aggregate([
+      { $match: match },
+
+      {
+        $group: {
+          _id: {
+            user: "$user",
+            day: "$date", // Uses your YYYY-MM-DD string
+          },
+          clockIn: { $min: "$clockIn" },
+          clockOut: { $max: "$clockOut" },
+          totalSeconds: { $sum: "$totalDuration" },
+        },
+      },
+
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id.user",
+          foreignField: "_id",
+          as: "userDetails",
+        },
+      },
+      { $unwind: "$userDetails" },
+
+      {
+        $project: {
+          _id: 0,
+          clockIn: 1,
+          clockOut: 1,
+          employeeId: "$_id.user",
+          name: "$userDetails.name",
+          email: "$userDetails.email",
+          date: "$_id.day",
+          totalHours: { 
+            $divide: [{ $ifNull: ["$totalSeconds", 0] }, 3600] 
+          },
+        },
+      },
+
+      { $sort: { date: -1 } },
+    ]);
+
+    // Matches your requested response format exactly
+    return res.status(200).json({ success: true, data: logs });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 };

@@ -22,15 +22,19 @@ const formatTime = (date: Date | null) => {
     minute: "2-digit",
   });
 };
-// Format seconds to HH:MM:SS
-const formatDuration = (seconds: number) => {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  return `${hrs.toString().padStart(2, "0")}:${mins
-    .toString()
-    .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+/**
+ * Helper to format seconds into HH:mm:ss
+ */
+const formatDuration = (totalSeconds: number): string => {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+
+  return [hours, minutes, seconds]
+    .map((val) => val.toString().padStart(2, "0"))
+    .join(":");
 };
+
 const getTodayDate = () => {
   const today = new Date();
   const offset = today.getTimezoneOffset();
@@ -330,126 +334,143 @@ export const getCompanyTimeLogs = async (req: AuthRequest, res: Response) => {
   try {
     const companyId = req.headers["x-company-id"];
     if (!companyId) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Unauthorized: Company ID missing" });
+      return res.status(401).json({ success: false, message: "Unauthorized: Company ID missing" });
     }
 
     const { startDate, endDate, status } = req.query;
-
-    // Convert companyId to ObjectId
     const companyObjectId = new mongoose.Types.ObjectId(companyId as string);
 
-    // 1️⃣ Get all employees of this company
-    const employees = await User.find({ company: companyObjectId }).select(
-      "_id name email teamName status role"
-    );
+    // 1. Initial Match: Filter by Company first for performance
+    const matchQuery: any = { company: companyObjectId };
 
-    if (!employees.length) {
-      return res.json({ success: true, count: 0, logs: [] });
+    // 2. Status Filter
+    if (status === "active") matchQuery.isActive = true;
+    if (status === "completed") matchQuery.isActive = false;
+
+    // 3. DATE FILTER LOGIC
+    if (startDate || endDate) {
+      // If user picks a range, we filter the clockIn DATE OBJECT
+      matchQuery.clockIn = {};
+      if (startDate) {
+        const start = new Date(startDate as string);
+        start.setHours(0, 0, 0, 0);
+        matchQuery.clockIn.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate as string);
+        end.setHours(23, 59, 59, 999);
+        matchQuery.clockIn.$lte = end;
+      }
+    } else {
+      // DEFAULT: Use the DATE STRING ("YYYY-MM-DD") to match your other API logic
+      const todayStr = new Date().toISOString().split('T')[0];
+      matchQuery.date = todayStr;
     }
 
-    const employeeIds = employees.map((e) => e._id);
+    // 4. Aggregation Pipeline (Matches your working "Hours" API logic)
+   // ... (company and status logic stays the same)
 
-    // 2️⃣ Build TimeSession query
-    const query: any = {
-      user: { $in: employeeIds },
-    };
-    if (status === "active") query.isActive = true;
-    if (status === "completed") query.isActive = false;
-
-    if (startDate || endDate) query.clockIn = {};
-    if (startDate) query.clockIn.$gte = new Date(startDate as string);
-    if (endDate) query.clockIn.$lte = new Date(endDate as string);
-
-    // 3️⃣ Fetch all sessions for these employees
-    const sessions = await TimeSession.find(query)
-      .populate({ path: "user", select: "_id name email teamName status role" })
-      .sort({ clockIn: 1 }); // sort ascending to easily get first clock-in
-
-    // 4️⃣ Group by employee
-    const logsMap: Record<string, any> = {};
-
-    sessions.forEach((s) => {
-      const user = s.user as any;
-      if (!user) return;
-
-      if (!logsMap[user._id.toString()]) {
-        logsMap[user._id.toString()] = {
-          id: user._id,
-          user: {
-            id: user._id,
-            name: user.name,
-            email: user.email,
-            department: user.teamName || "N/A",
-            status: user.status || "Unknown",
+    // 3. DATE FILTER LOGIC - Simplified to match your DB string format
+  if (startDate) {
+      // If startDate is "2026-03-11T...", split it to get "2026-03-11"
+      const filterDate = new Date(startDate as string).toISOString().split('T')[0];
+      matchQuery.date = filterDate;
+    } else {
+      // DEFAULT: Today's date string
+      const todayStr = new Date().toISOString().split('T')[0];
+      matchQuery.date = todayStr;
+    }
+    const logs = await TimeSession.aggregate([
+      { $match: matchQuery },
+      {
+        $project: {
+          user: 1,
+          clockIn: 1,
+          clockOut: 1,
+          isActive: 1,
+          // LIVE CALCULATION (Keep this, it's correct)
+          duration: {
+            $cond: {
+              if: { $or: [{ $eq: ["$totalDuration", 0] }, { $not: ["$totalDuration"] }] },
+              then: { $divide: [{ $subtract: [new Date(), "$clockIn"] }, 1000] },
+              else: "$totalDuration",
+            },
           },
-          clockIn: s.clockIn ? new Date(s.clockIn).toISOString() : null,
-          clockOut: s.clockOut ? new Date(s.clockOut).toISOString() : null,
-          duration: s.totalDuration ?? 0,
-          isActive: s.isActive ?? false,
-        };
-      } else {
-        // Update clockOut to latest
-        const existing = logsMap[user._id.toString()];
-        const sessionClockOut = s.clockOut ? new Date(s.clockOut) : null;
-        if (sessionClockOut) {
-          const existingClockOut = existing.clockOut
-            ? new Date(existing.clockOut)
-            : null;
-          if (!existingClockOut || sessionClockOut > existingClockOut) {
-            existing.clockOut = sessionClockOut.toISOString();
-            // Recalculate duration if clockIn exists
-            if (existing.clockIn) {
-              const durationSeconds =
-                Math.floor(
-                  (sessionClockOut.getTime() - new Date(existing.clockIn).getTime()) /
-                    1000
-                ) || 0;
-              existing.duration = durationSeconds;
-            }
-          }
+        },
+      },
+      {
+        $group: {
+          _id: "$user",
+          firstClockIn: { $min: "$clockIn" },
+          lastClockOut: { $max: "$clockOut" },
+          totalSeconds: { $sum: "$duration" },
+          isActive: { $max: { $cond: ["$isActive", 1, 0] } }
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "userDetails",
+        },
+      },
+      { $unwind: "$userDetails" },
+      {
+        $project: {
+          id: "$_id",
+          employeeName: "$userDetails.name",
+          employeeEmail: "$userDetails.email",
+          team: "$userDetails.teamName",
+          clockIn: "$firstClockIn",
+          clockOut: "$lastClockOut",
+          duration: "$totalSeconds",
+          isActive: { $eq: ["$isActive", 1] }
         }
-      }
-    });
+      },
+      { $sort: { clockIn: -1 } }
+    ]);
 
-    // 5️⃣ Convert map to array and format duration
-    const logs = Object.values(logsMap).map((l: any) => ({
-      ...l,
-      durationFormatted: new Date(l.duration * 1000)
-        .toISOString()
-        .substr(11, 8),
+    // 5. Final Formatting
+    const formattedLogs = logs.map(log => ({
+      ...log,
+      durationFormatted: formatDuration(log.duration)
     }));
 
-    return res.json({ success: true, count: logs.length, logs });
+    return res.json({ success: true, count: formattedLogs.length, logs: formattedLogs });
   } catch (error: any) {
-    console.error("❌ getCompanyTimeLogs Error:", error);
+    console.error("❌ Filter Error:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+// backend/controllers/timeController.ts
+
 export const getTodayTotalSeconds = async (req: AuthRequest, res: Response) => {
   try {
     const userId = getUserId(req);
-    if (!userId) return res.status(401).json({ success: false, message: "Unauthorized" });
-
     const todayDate = getTodayDate();
 
-    // ✅ Get all today's sessions
+    // Find all sessions for today
     const sessions = await TimeSession.find({ user: userId, date: todayDate });
 
     let totalSeconds = 0;
+    let activeSessionStart: Date | null = null;
 
     sessions.forEach((s) => {
-      if (s.totalDuration) {
-        totalSeconds += s.totalDuration;
-      } else if (s.isActive && s.clockIn) {
-        // If session is active, add elapsed time so far
-        const elapsed = Math.floor((Date.now() - new Date(s.clockIn).getTime()) / 1000);
-        totalSeconds += elapsed;
+      if (s.isActive && s.clockIn) {
+        // We found the live session
+        activeSessionStart = s.clockIn;
+      } else {
+        // Add completed sessions
+        totalSeconds += (s.totalDuration || 0);
       }
     });
 
-    res.json({ success: true, totalSeconds });
+    res.json({ 
+      success: true, 
+      totalSeconds, // Completed time
+      activeSessionStart // When the current one started
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
