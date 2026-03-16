@@ -12,12 +12,12 @@ export const comparePassword = async (password: string, hash: string) => {
 // Use JWT_ACCESS_SECRET here
 export const generateToken = (userId: string, role: string) => {
   if (!process.env.JWT_ACCESS_SECRET) throw new Error("JWT_ACCESS_SECRET missing");
-  return jwt.sign({ userId, role }, process.env.JWT_ACCESS_SECRET, { expiresIn: "1h" });
+  return jwt.sign({ userId, role }, process.env.JWT_ACCESS_SECRET, { expiresIn: "24h" });
 };
 
 export const generateRefreshToken = (userId: string, role: string) => {
   if (!process.env.JWT_REFRESH_SECRET) throw new Error("JWT_REFRESH_SECRET missing");
-  return jwt.sign({ userId, role }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
+  return jwt.sign({ userId, role }, process.env.JWT_REFRESH_SECRET, { expiresIn: "30d" });
 };
 
 export const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
