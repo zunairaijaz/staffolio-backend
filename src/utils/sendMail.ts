@@ -1,20 +1,14 @@
-import nodemailer from "nodemailer";
+import { createMailTransporter, getMailFrom } from "../config/mail";
 
 export const sendMail = async (
   to: string,
   subject: string,
   html: string
 ) => {
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.EMAIL, 
-      pass: process.env.EMAIL_PASSWORD, 
-    },
-  });
+  const transporter = createMailTransporter();
 
   await transporter.sendMail({
-    from: `"Staffolio HR" <${process.env.EMAIL}>`,
+    from: getMailFrom(),
     to,
     subject,
     html,

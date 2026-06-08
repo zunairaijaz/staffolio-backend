@@ -1,0 +1,16 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const timeSession_controller_1 = require("../controllers/timeSession.controller");
+const authGuard_1 = require("../middlewares/authGuard");
+const timeSession_controller_2 = require("../controllers/timeSession.controller");
+const router = (0, express_1.Router)();
+router.post("/clock-in", authGuard_1.authGuard, timeSession_controller_1.clockIn);
+router.post("/clock-out", authGuard_1.authGuard, timeSession_controller_1.clockOut);
+router.get("/today", authGuard_1.authGuard, timeSession_controller_1.getTodaySession);
+router.get("/stats/today-yesterday", authGuard_1.authGuard, timeSession_controller_2.getStats);
+router.get("/sessions", authGuard_1.authGuard, timeSession_controller_1.getTimeSessions);
+router.get("/companySessions", authGuard_1.authGuard, timeSession_controller_1.getCompanyTimeLogs);
+router.get("/today-total", authGuard_1.authGuard, timeSession_controller_1.getTodayTotalSeconds);
+router.get("/monthly-employee-logs", authGuard_1.authGuard, timeSession_controller_1.getEmployeeMonthlyLogs);
+exports.default = router;

@@ -1,13 +1,9 @@
 import User from "../models/User";
 import { hashPassword, comparePassword, generateToken, generateOTP } from "../utils/auth.utils";
-import nodemailer from "nodemailer";
 import { Request, Response } from "express";
+import { createMailTransporter, getMailFrom } from "../config/mail";
 
-// Setup nodemailer (example with Gmail)
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: { user: process.env.EMAIL, pass: process.env.EMAIL_PASSWORD }
-});
+const transporter = createMailTransporter();
 
 export const register = async (req: Request, res: Response) => {
   try {
@@ -45,7 +41,7 @@ export const register = async (req: Request, res: Response) => {
 
     // 6️⃣ Send OTP email
     await transporter.sendMail({
-      from: process.env.EMAIL,
+      from: getMailFrom(),
       to: email,
       subject: "Verify your account",
       text: `Your OTP is ${otp}`,
@@ -142,7 +138,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
     user.otpExpiry = new Date(Date.now() + 10 * 60000);
     await user.save();
 
-    await transporter.sendMail({ from: process.env.EMAIL, to: email, subject: "Reset Password OTP", text: `OTP: ${otp}` });
+    await transporter.sendMail({ from: getMailFrom(), to: email, subject: "Reset Password OTP", text: `OTP: ${otp}` });
     res.json({ success: true, message: "OTP sent to email" });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

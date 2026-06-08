@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const user_controller_1 = require("../controllers/user.controller");
+const authGuard_1 = require("../middlewares/authGuard");
+const router = (0, express_1.Router)();
+router.put("/edit-profile", authGuard_1.authGuard, user_controller_1.editProfile);
+router.get("/", authGuard_1.authGuard, user_controller_1.getAllUsers);
+router.get("/kpi", authGuard_1.authGuard, user_controller_1.getUserKPI);
+router.post("/onboard", authGuard_1.authGuard, user_controller_1.onboardEmployee);
+router.get("/company-employees", authGuard_1.authGuard, user_controller_1.getCompanyEmployeesWithHours);
+router.get("/myEmployees", authGuard_1.authGuard, user_controller_1.getCompanyEmployeesWithHours);
+router.patch('/deactivate/:id', authGuard_1.authGuard, user_controller_1.deactivateEmployee);
+router.get('/weekly-performance/:id', user_controller_1.getWeeklyPerformance);
+exports.default = router;
