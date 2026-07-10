@@ -23,7 +23,8 @@ export const registerCompany = async (req: Request<{}, {}, CompanyRegisterBody>,
 
     const hashed = await hashPassword(password);
     const company = await Company.create({ name, email, password: hashed, phone });
-    res.status(201).json({ success: true, message: "Company registered", company });
+    const safeCompany = await Company.findById(company._id).select("-password");
+    res.status(201).json({ success: true, message: "Company registered", company: safeCompany });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -38,8 +39,9 @@ export const loginCompany = async (req: Request<{}, {}, CompanyLoginBody>, res: 
     const isValid = await comparePassword(password, company.password);
     if (!isValid) return res.status(401).json({ success: false, message: "Invalid credentials" });
 
-    const token = generateToken(company._id.toString(), "COMPANY"); // now includes company in JWT
-    res.json({ success: true, token, company });
+    const token = generateToken(company._id.toString(), "COMPANY");
+    const safeCompany = await Company.findById(company._id).select("-password");
+    res.json({ success: true, token, company: safeCompany });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

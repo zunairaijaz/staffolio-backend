@@ -16,7 +16,8 @@ const registerCompany = async (req, res) => {
             return res.status(400).json({ success: false, message: "Email already exists" });
         const hashed = await (0, auth_utils_1.hashPassword)(password);
         const company = await company_1.default.create({ name, email, password: hashed, phone });
-        res.status(201).json({ success: true, message: "Company registered", company });
+        const safeCompany = await company_1.default.findById(company._id).select("-password");
+        res.status(201).json({ success: true, message: "Company registered", company: safeCompany });
     }
     catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -32,8 +33,9 @@ const loginCompany = async (req, res) => {
         const isValid = await (0, auth_utils_1.comparePassword)(password, company.password);
         if (!isValid)
             return res.status(401).json({ success: false, message: "Invalid credentials" });
-        const token = (0, auth_utils_1.generateToken)(company._id.toString(), "COMPANY"); // now includes company in JWT
-        res.json({ success: true, token, company });
+        const token = (0, auth_utils_1.generateToken)(company._id.toString(), "COMPANY");
+        const safeCompany = await company_1.default.findById(company._id).select("-password");
+        res.json({ success: true, token, company: safeCompany });
     }
     catch (err) {
         res.status(500).json({ success: false, message: err.message });

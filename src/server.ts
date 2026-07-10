@@ -49,11 +49,27 @@ app.get("/", (_req, res) => {
   res.json({ status: "ok", message: "Staffolio API is running" });
 });
 
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", async (_req, res) => {
+  let companies = 0;
+  let users = 0;
+
+  try {
+    const db = mongoose.connection.db;
+    if (db) {
+      companies = await db.collection("companies").countDocuments();
+      users = await db.collection("users").countDocuments();
+    }
+  } catch {
+    // ignore count errors on health check
+  }
+
   res.json({
     status: "ok",
     message: "Staffolio API is running",
     db: mongoose.connection.readyState,
+    database: mongoose.connection.name,
+    companies,
+    users,
     jwt: Boolean(process.env.JWT_ACCESS_SECRET),
   });
 });
