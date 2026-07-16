@@ -154,20 +154,51 @@ const onboardEmployee = async (req, res) => {
         if (!name || !email) {
             return res.status(400).json({ success: false, message: "Name and Email are required" });
         }
-        const existingUser = await User_1.default.findOne({ email: email.toLowerCase() });
-        if (existingUser) {
-            return res.status(400).json({ success: false, message: "User already exists" });
-        }
+        const normalizedEmail = email.toLowerCase();
+        const existingUser = await User_1.default.findOne({ email: normalizedEmail });
         const plainPassword = generatePassword();
         const hashedPassword = await bcryptjs_1.default.hash(plainPassword, 10);
-        // Create user
+        const employeeRole = role || "EMPLOYEE";
+        const employeeTeamName = teamName || admin.teamName;
+        // Already part of this company
+        if (existingUser &&
+            existingUser.company &&
+            existingUser.company.toString() === companyId.toString()) {
+            return res.status(400).json({
+                success: false,
+                message: "User already exists",
+            });
+        }
+        // Exists under another company → move to the requesting company
+        if (existingUser) {
+            existingUser.name = name;
+            existingUser.password = hashedPassword;
+            existingUser.company = new mongoose_1.default.Types.ObjectId(companyId);
+            existingUser.role = employeeRole;
+            existingUser.teamName = employeeTeamName;
+            existingUser.status = "ACTIVE";
+            existingUser.isVerified = true;
+            await existingUser.save();
+            await (0, sendMail_1.sendMail)(existingUser.email, "Welcome", `Email: ${existingUser.email} Pass: ${plainPassword}`);
+            return res.status(201).json({
+                success: true,
+                message: "Employee onboarded successfully",
+                employee: {
+                    id: existingUser._id,
+                    name: existingUser.name,
+                    email: existingUser.email,
+                    company: existingUser.company,
+                    role: existingUser.role,
+                },
+            });
+        }
         const employee = await User_1.default.create({
             name,
-            email: email.toLowerCase(),
+            email: normalizedEmail,
             password: hashedPassword,
-            company: companyId, // Now recognized by the schema
-            role: role || "EMPLOYEE",
-            teamName: teamName || admin.teamName,
+            company: companyId,
+            role: employeeRole,
+            teamName: employeeTeamName,
             status: "ACTIVE",
             isVerified: true,
         });
@@ -179,7 +210,7 @@ const onboardEmployee = async (req, res) => {
                 id: employee._id,
                 name: employee.name,
                 email: employee.email,
-                company: employee.company, // Will now show the ID
+                company: employee.company,
                 role: employee.role,
             },
         });
