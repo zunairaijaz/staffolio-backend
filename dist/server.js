@@ -35,7 +35,12 @@ const corsOptions = {
         }
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-company-id"],
+    allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "x-company-id",
+        "userid",
+    ],
     credentials: true,
 };
 if (process.env.IIS_MANAGES_CORS !== "true") {
